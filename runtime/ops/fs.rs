@@ -839,11 +839,24 @@ fn op_stat_sync(
   state.borrow_mut::<Permissions>().read.check(&path)?;
   debug!("op_stat_sync {} {}", path.display(), lstat);
   let metadata = if lstat {
-    std::fs::symlink_metadata(&path)?
+    std::fs::symlink_metadata(&path)
   } else {
-    std::fs::metadata(&path)?
+    std::fs::metadata(&path)
   };
-  Ok(get_stat(metadata))
+  match metadata {
+    Ok(value) => Ok(get_stat(value)),
+    Err(error) => {
+      eprintln!("{}: {}\n{}: '{}'",
+        //  error
+        colors::red_bold("error"),
+        error,
+        // file path
+        colors::red_bold("file path"),
+        colors::green(&path.to_string_lossy()),
+      );
+      std::process::exit(1);
+    }
+  }
 }
 
 async fn op_stat_async(
