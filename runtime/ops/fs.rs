@@ -4,6 +4,7 @@ use super::io::StdFileResource;
 use super::utils::into_string;
 use crate::fs_util::canonicalize_path;
 use crate::permissions::Permissions;
+use crate::colors;
 use deno_core::error::bad_resource_id;
 use deno_core::error::custom_error;
 use deno_core::error::type_error;
@@ -23,7 +24,7 @@ use std::cell::RefCell;
 use std::convert::From;
 use std::env::{current_dir, set_current_dir, temp_dir};
 use std::io;
-use std::io::{Seek, SeekFrom};
+use std::io::{Seek, SeekFrom, ErrorKind, Error};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::SystemTime;
@@ -845,17 +846,31 @@ fn op_stat_sync(
   };
   match metadata {
     Ok(value) => Ok(get_stat(value)),
-    Err(error) => {
-      eprintln!("{}: {}\n{}: '{}'",
-        //  error
-        colors::red_bold("error"),
-        error,
-        // file path
-        colors::red_bold("file path"),
-        colors::green(&path.to_string_lossy()),
-      );
-      std::process::exit(1);
-    }
+    Err(error) => Err(handle_fs_error("statSync", error, path))
+  }
+}
+
+fn handle_fs_error(method: &str, error: Error, path: PathBuf) -> AnyError {
+  match error.kind() {
+    ErrorKind::NotFound => AnyError::from(
+      Error::new(ErrorKind::NotFound,
+        format!("{label_error}: {path} > Deno.{method}('{path}'[...])",
+          label_error = colors::red_bold("No such file or directory"),
+          method = method,
+          path = colors::green(&path.to_string_lossy())
+        )
+      )
+    ),
+    ErrorKind::PermissionDenied => AnyError::from(
+      Error::new(ErrorKind::NotFound,
+        format!("{label_error}: {path} > Deno.{method}('{path}'[...])",
+          label_error = colors::red_bold("Permission Denied"),
+          method = method,
+          path = colors::green(&path.to_string_lossy())
+        )
+      )
+    ),
+    _ => AnyError::from(error)
   }
 }
 
@@ -875,11 +890,14 @@ async fn op_stat_async(
   tokio::task::spawn_blocking(move || {
     debug!("op_stat_async {} {}", path.display(), lstat);
     let metadata = if lstat {
-      std::fs::symlink_metadata(&path)?
+      std::fs::symlink_metadata(&path)
     } else {
-      std::fs::metadata(&path)?
+      std::fs::metadata(&path)
     };
-    Ok(get_stat(metadata))
+    match metadata {
+      Ok(value) => Ok(get_stat(value)),
+      Err(error) => Err(handle_fs_error("stat", error, path))
+    }
   })
   .await
   .unwrap()
@@ -1034,14 +1052,16 @@ fn op_rename_sync(
 ) -> Result<(), AnyError> {
   let oldpath = PathBuf::from(&args.oldpath);
   let newpath = PathBuf::from(&args.newpath);
-
   let permissions = state.borrow_mut::<Permissions>();
   permissions.read.check(&oldpath)?;
   permissions.write.check(&oldpath)?;
   permissions.write.check(&newpath)?;
   debug!("op_rename_sync {} {}", oldpath.display(), newpath.display());
-  std::fs::rename(&oldpath, &newpath)?;
-  Ok(())
+  let metadata = std::fs::rename(&oldpath, &newpath);
+  match metadata {
+    Ok(_) => Ok(()),
+    Err(error) => Err(handle_fs_error("renameSync", error, oldpath))
+  }
 }
 
 async fn op_rename_async(
