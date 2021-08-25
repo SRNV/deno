@@ -1057,8 +1057,7 @@ fn op_rename_sync(
   permissions.write.check(&oldpath)?;
   permissions.write.check(&newpath)?;
   debug!("op_rename_sync {} {}", oldpath.display(), newpath.display());
-  let metadata = std::fs::rename(&oldpath, &newpath);
-  match metadata {
+  match std::fs::rename(&oldpath, &newpath) {
     Ok(_) => Ok(()),
     Err(error) => Err(handle_fs_error("renameSync", error, oldpath))
   }
@@ -1084,8 +1083,10 @@ async fn op_rename_async(
       oldpath.display(),
       newpath.display()
     );
-    std::fs::rename(&oldpath, &newpath)?;
-    Ok(())
+    match std::fs::rename(&oldpath, &newpath) {
+      Ok(_) => Ok(()),
+      Err(error) => Err(handle_fs_error("rename", error, oldpath))
+    }
   })
   .await
   .unwrap()
@@ -1113,8 +1114,10 @@ fn op_link_sync(
   permissions.write.check(&newpath)?;
 
   debug!("op_link_sync {} {}", oldpath.display(), newpath.display());
-  std::fs::hard_link(&oldpath, &newpath)?;
-  Ok(())
+  match std::fs::hard_link(&oldpath, &newpath) {
+    Ok(_) => Ok(()),
+    Err(error) => Err(handle_fs_error("linkSync", error, oldpath))
+  }
 }
 
 async fn op_link_async(
@@ -1136,8 +1139,10 @@ async fn op_link_async(
 
   tokio::task::spawn_blocking(move || {
     debug!("op_link_async {} {}", oldpath.display(), newpath.display());
-    std::fs::hard_link(&oldpath, &newpath)?;
-    Ok(())
+    match std::fs::hard_link(&oldpath, &newpath) {
+      Ok(_) => Ok(()),
+      Err(error) => Err(handle_fs_error("link", error, oldpath))
+    }
   })
   .await
   .unwrap()
@@ -1655,8 +1660,10 @@ fn op_utime_sync(
   let mtime = filetime::FileTime::from_unix_time(args.mtime.0, args.mtime.1);
 
   state.borrow_mut::<Permissions>().write.check(&path)?;
-  filetime::set_file_times(path, atime, mtime)?;
-  Ok(())
+  match filetime::set_file_times(path, atime, mtime) {
+    Ok(_) => Ok(()),
+    Err(error) => Err(handle_fs_error("utime", error, path))
+  }
 }
 
 async fn op_utime_async(
@@ -1677,8 +1684,10 @@ async fn op_utime_async(
     .check(&path)?;
 
   tokio::task::spawn_blocking(move || {
-    filetime::set_file_times(path, atime, mtime)?;
-    Ok(())
+    match filetime::set_file_times(path, atime, mtime) {
+      Ok(_) => Ok(()),
+      Err(error) => Err(handle_fs_error("utime", error, path))
+    }
   })
   .await
   .unwrap()
